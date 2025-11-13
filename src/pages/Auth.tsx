@@ -8,6 +8,9 @@ import { Activity } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import authBackground from "@/assets/auth-background.jpg";
 import supabase from "@/lib/supabaseClient";
+import { useToast } from "@/hooks/use-toast";
+import ParticleBackground from '@/components/particle'
+
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -37,6 +40,7 @@ const Auth = () => {
   const [doctorSpecialization, setDoctorSpecialization] = useState("");
   const [doctorQualifications, setDoctorQualifications] = useState("");
   const [doctorLicenseNumber, setDoctorLicenseNumber] = useState("");
+  const { toast } = useToast();
 
   // ---------- Login Handler (Supabase) ----------
   const handleLogin = async (e: React.FormEvent) => {
@@ -49,16 +53,24 @@ const Auth = () => {
       });
 
       if (error) {
-        alert(`Login error: ${error.message}`);
+        toast({
+      title: "Login Error",
+      description: error.message,
+    });
         return;
       }
 
       // success
-      alert("Logged in successfully");
-      navigate("/dashboard");
+toast({
+      title: "Login Successfull",
+      description: ".",
+    });      navigate("/dashboard");
     } catch (err: any) {
       console.error(err);
-      alert("An unexpected error occurred during login.");
+      toast({
+      title: "Unexpected Error",
+      description: ".",
+    });
     } finally {
       setLoginLoading(false);
     }
@@ -106,7 +118,10 @@ const Auth = () => {
       }
     });
       if (error) {
-        alert(`Signup error: ${error.message}`);
+        toast({
+      title: "SignUp Error",
+      description: error.message,
+    });
         return;
       }
 
@@ -126,14 +141,23 @@ const Auth = () => {
         if (profileError) {
           console.warn("Patient profile insertion/update error:", profileError);
         }
-        alert("Signup successful. You're signed in.");
+        toast({
+      title: "SignUP Done",
+      description: ".",
+    });
         navigate("/dashboard");
       } else {
-        alert("Signup successful. Please check your email to confirm your account. After confirming, log in to complete your profile.");
+        toast({
+      title: "SignUp done",
+      description: "Please check email for validation.",
+    });
       }
     } catch (err: any) {
       console.error(err);
-      alert("An unexpected error occurred during signup.");
+      toast({
+      title: "Unknown Error",
+      description: "An unexpected error occurred during signup.",
+    });
     } finally {
       setSignupLoading(false);
     }
@@ -155,8 +179,11 @@ const Auth = () => {
       );
 
       if (error) {
-        alert(`Signup error: ${error.message}`);
-        return;
+        toast({
+      title: "SignUP Done",
+      description:error.message,
+    });
+                return;
       }
 
       const getUserRes = await supabase.auth.getUser();
@@ -176,24 +203,31 @@ const Auth = () => {
         if (profileError) {
           console.warn("Doctor profile insertion/update error:", profileError);
         }
-
-        alert("Doctor signup successful. You're signed in.");
+toast({
+      title: "SignUP Done",
+      description: "You are signed Up Successfully",
+    });
         navigate("/dashboard");
       } else {
-        alert("Signup successful. Please check your email to confirm your account. After confirming, log in to complete your profile.");
-      }
+toast({
+      title: "SignUP Done",
+      description: "You are signed Up Successfully",
+    });      }
     } catch (err: any) {
       console.error(err);
-      alert("An unexpected error occurred during doctor signup.");
-    } finally {
+toast({
+      title: "Unexpected error",
+      description: err.message,
+    });    } finally {
       setSignupLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
+      <ParticleBackground/>
       {/* Left side - Forms */}
-      <div className="flex items-center justify-center p-8 bg-background">
+      <div className="flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center space-y-2">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">

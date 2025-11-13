@@ -5,14 +5,15 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import FeatureCard from "@/components/FeatureCard";
 import heroImage from "@/assets/hero-medical.jpg";
+import ParticleBackground from '@/components/particle'
 
 const Index = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-
+      <ParticleBackground/>
       {/* Hero Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-background to-accent">
+      <section className="py-20 px-4 sm:px-6 lg:px-8 ">
         <div className="container mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-6 animate-fade-in">

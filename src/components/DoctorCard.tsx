@@ -2,13 +2,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MapPin, GraduationCap, Stethoscope } from "lucide-react";
 
 interface DoctorCardProps {
+  id: string;
   doctor_name: string;
-  location: string;
-  specialization: string;
-  degree: string;
+  location?: string | null;
+  specialization?: string | null;
+  qualifications?: string | null;
 }
 
-const DoctorCard = ({ doctor_name, location, specialization, degree }: DoctorCardProps) => {
+const DoctorCard = ({ doctor_name, location, specialization, qualifications }: DoctorCardProps) => {
   return (
     <Card className="hover-scale transition-all">
       <CardContent className="p-6 space-y-4">
@@ -29,7 +30,7 @@ const DoctorCard = ({ doctor_name, location, specialization, degree }: DoctorCar
           </div>
           <div className="flex items-center gap-2 text-sm">
             <GraduationCap className="h-4 w-4 text-primary" />
-            <span className="text-muted-foreground">{degree}</span>
+            <span className="text-muted-foreground">{qualifications}</span>
           </div>
         </div>
       </CardContent>

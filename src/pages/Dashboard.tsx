@@ -1,10 +1,13 @@
-import { useState, useRef } from "react";
+"use client";
+
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload, Camera, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MedicalLoader from "@/components/MedicalLoader";
 import jsPDF from "jspdf";
+import ParticleBackground from '@/components/particle'
 
 interface MedicalReport {
   name: string;
@@ -21,33 +24,108 @@ interface MedicalReport {
   recommendations: string;
 }
 
-const Dashboard = () => {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [report, setReport] = useState<MedicalReport | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
+/* ------------------------------------------------------------------
+   CAMERA COMPONENT - WORKS ON MOBILE CAMERA + DESKTOP WEBCAM
+-------------------------------------------------------------------- */
+const CameraCapture = ({
+  onCapture,
+  onClose,
+}: {
+  onCapture: (img: string) => void;
+  onClose: () => void;
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-        processImage();
-      };
-      reader.readAsDataURL(file);
-    }
+  useEffect(() => {
+    const startCamera = async () => {
+      try {
+        const camStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+
+        setStream(camStream);
+        if (videoRef.current) videoRef.current.srcObject = camStream;
+      } catch (error) {
+        console.error("Camera error:", error);
+        onClose();
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const captureImage = () => {
+    const video = videoRef.current!;
+    const canvas = document.createElement("canvas");
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(video, 0, 0);
+
+    const photo = canvas.toDataURL("image/jpeg");
+    onCapture(photo);
   };
 
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[999] flex flex-col items-center justify-center p-4">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="w-full max-w-md rounded-lg shadow-xl border-2 border-white"
+      />
+
+      <div className="flex gap-4 mt-6">
+        <Button size="lg" onClick={captureImage}>
+          Capture
+        </Button>
+        <Button size="lg" variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------
+   MAIN DASHBOARD
+-------------------------------------------------------------------- */
+
+export default function Dashboard() {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [report, setReport] = useState<MedicalReport | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [openCamera, setOpenCamera] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  /* ------------------- FILE / CAMERA IMAGE HANDLING ------------------- */
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSelectedImage(reader.result as string);
+      processImage();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  /* ------------------- SIMULATED PROCESSING ------------------- */
   const processImage = async () => {
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Mock report data
+
+    await new Promise((res) => setTimeout(res, 2000)); // fake latency
+
     const mockReport: MedicalReport = {
       name: "John Doe",
       age: 35,
@@ -59,290 +137,135 @@ const Dashboard = () => {
       platelets: "250,000/μL",
       glucose: "95 mg/dL",
       cholesterol: "180 mg/dL",
-      diagnosis: "All parameters are within normal range. Patient shows good overall health indicators.",
-      recommendations: "Continue maintaining a healthy lifestyle. Regular exercise and balanced diet recommended. Follow-up check-up in 6 months."
+      diagnosis: "All vital health parameters are normal.",
+      recommendations:
+        "Maintain a balanced diet, continue exercise, and get a check-up in 6 months.",
     };
-    
+
     setReport(mockReport);
     setIsLoading(false);
+
     toast({
       title: "Report Generated",
-      description: "Your medical report has been successfully generated.",
+      description: "Your medical report is ready.",
     });
   };
 
+  /* ------------------- DOWNLOAD PDF ------------------- */
   const handleDownloadReport = () => {
     if (!report) return;
-    
+
     const pdf = new jsPDF();
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 20;
-    let yPosition = 20;
-
-    // Title
-    pdf.setFontSize(20);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("MEDICAL REPORT", pageWidth / 2, yPosition, { align: "center" });
-    
-    yPosition += 15;
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 10;
-
-    // Patient Information
-    pdf.setFontSize(14);
-    pdf.text("Patient Information", margin, yPosition);
-    yPosition += 8;
-    
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Name: ${report.name}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Age: ${report.age} years`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Gender: ${report.gender}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Date of Test: ${report.dateOfTest}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Blood Type: ${report.bloodType}`, margin, yPosition);
-    yPosition += 12;
-
-    // Test Results
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Test Results", margin, yPosition);
-    yPosition += 8;
-    
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Hemoglobin: ${report.hemoglobin}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`WBC Count: ${report.wbc}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Platelet Count: ${report.platelets}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Blood Glucose: ${report.glucose}`, margin, yPosition);
-    yPosition += 6;
-    pdf.text(`Cholesterol: ${report.cholesterol}`, margin, yPosition);
-    yPosition += 12;
-
-    // Diagnosis
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Diagnosis", margin, yPosition);
-    yPosition += 8;
-    
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    const diagnosisLines = pdf.splitTextToSize(report.diagnosis, pageWidth - 2 * margin);
-    pdf.text(diagnosisLines, margin, yPosition);
-    yPosition += diagnosisLines.length * 6 + 6;
-
-    // Recommendations
-    pdf.setFontSize(14);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Recommendations", margin, yPosition);
-    yPosition += 8;
-    
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    const recommendationsLines = pdf.splitTextToSize(report.recommendations, pageWidth - 2 * margin);
-    pdf.text(recommendationsLines, margin, yPosition);
-    yPosition += recommendationsLines.length * 6 + 12;
-
-    // Footer
-    pdf.setFontSize(8);
-    pdf.setFont("helvetica", "italic");
-    pdf.text("Generated by Medhyamed - Where Reports Speak Clearly", pageWidth / 2, pdf.internal.pageSize.getHeight() - 10, { align: "center" });
-
-    pdf.save(`medical-report-${report.name.replace(/\s+/g, '-')}-${Date.now()}.pdf`);
-    
-    toast({
-      title: "Report Downloaded",
-      description: "Your medical report has been downloaded as PDF.",
-    });
+    pdf.setFontSize(18);
+    pdf.text("MEDICAL REPORT", 20, 20);
+    pdf.save("report.pdf");
   };
 
+  /* ------------------- RESET ------------------- */
   const resetUpload = () => {
     setSelectedImage(null);
     setReport(null);
     setIsLoading(false);
   };
 
+  /* ------------------- MAIN UI ------------------- */
   return (
     <main className="py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-background to-accent">
+      <ParticleBackground/>
+      {openCamera && (
+        <CameraCapture
+          onCapture={(img) => {
+            setSelectedImage(img);
+            setOpenCamera(false);
+            processImage();
+          }}
+          onClose={() => setOpenCamera(false)}
+        />
+      )}
+
       <div className="container mx-auto max-w-6xl">
-          {!report && !isLoading && (
-            <div className="text-center space-y-8">
-              <div className="space-y-4 animate-fade-in">
-                <h1 className="text-4xl md:text-5xl font-bold text-foreground">
-                  Upload Medical Report
-                </h1>
-                <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-                  Upload an image of your medical report to generate a detailed analysis
+        {/* ------------------ START SCREEN ------------------ */}
+        {!selectedImage && !isLoading && !report && (
+          <div className="text-center space-y-8">
+            <Card className="max-w-2xl mx-auto p-8">
+              <CardContent className="space-y-6">
+                <Upload className="h-24 w-24 text-primary mx-auto" />
+                <p className="text-lg text-muted-foreground">
+                  Upload a medical report or take a photo
                 </p>
-              </div>
 
-              <Card className="max-w-2xl mx-auto p-8 animate-scale-in hover-scale transition-all">
-                <CardContent className="space-y-6">
-                  {!selectedImage ? (
-                    <>
-                      <div className="flex flex-col items-center justify-center space-y-4 py-12">
-                        <Upload className="h-24 w-24 text-primary animate-pulse" />
-                        <p className="text-lg text-muted-foreground">
-                          Choose how to upload your report
-                        </p>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Button
-                          size="lg"
-                          className="h-20 text-lg"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <Upload className="mr-2 h-6 w-6" />
-                          Browse Files
-                        </Button>
-                        
-                        <Button
-                          size="lg"
-                          variant="outline"
-                          className="h-20 text-lg"
-                          onClick={() => cameraInputRef.current?.click()}
-                        >
-                          <Camera className="mr-2 h-6 w-6" />
-                          Take Photo
-                        </Button>
-                      </div>
-
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleFileSelect}
-                      />
-                      
-                      <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={handleFileSelect}
-                      />
-                    </>
-                  ) : (
-                    <div className="space-y-4">
-                      <img
-                        src={selectedImage}
-                        alt="Uploaded report"
-                        className="w-full max-h-96 object-contain rounded-lg"
-                      />
-                      <Button onClick={resetUpload} variant="outline" className="w-full">
-                        Upload Different Image
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {isLoading && (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8">
-              <MedicalLoader />
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-foreground">Analyzing Your Report</h2>
-                <p className="text-muted-foreground">Please wait while we process your medical data...</p>
-              </div>
-            </div>
-          )}
-
-          {report && !isLoading && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-foreground">Medical Report</h2>
-                <div className="flex gap-2">
-                  <Button onClick={handleDownloadReport} className="gap-2">
-                    <Download className="h-4 w-4" />
-                    Download Report
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                  <Button size="lg" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="mr-2" /> Browse Files
                   </Button>
-                  <Button onClick={resetUpload} variant="outline">
-                    New Report
+
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => setOpenCamera(true)}
+                  >
+                    <Camera className="mr-2" /> Take Photo
                   </Button>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card className="hover-scale transition-all">
-                  <CardContent className="p-6 space-y-4">
-                    <h3 className="text-xl font-semibold text-primary border-b pb-2">
-                      Patient Information
-                    </h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Name:</span>
-                        <span className="font-medium">{report.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Age:</span>
-                        <span className="font-medium">{report.age} years</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Gender:</span>
-                        <span className="font-medium">{report.gender}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Date of Test:</span>
-                        <span className="font-medium">{report.dateOfTest}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Blood Type:</span>
-                        <span className="font-medium">{report.bloodType}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
-                <Card className="hover-scale transition-all">
-                  <CardContent className="p-6 space-y-4">
-                    <h3 className="text-xl font-semibold text-primary border-b pb-2">
-                      Uploaded X-Ray Image
-                    </h3>
-                    {selectedImage && (
-                      <img
-                        src={selectedImage}
-                        alt="Medical X-Ray"
-                        className="w-full max-h-96 object-contain rounded-lg border"
-                      />
-                    )}
-                  </CardContent>
-                </Card>
+        {/* ------------------ PROCESSING ------------------ */}
+        {isLoading && (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+            <MedicalLoader />
+            <p className="text-xl text-muted-foreground">Analyzing your report...</p>
+          </div>
+        )}
 
-                <Card className="lg:col-span-2 hover-scale transition-all">
-                  <CardContent className="p-6 space-y-4">
-                    <h3 className="text-xl font-semibold text-primary border-b pb-2">
-                      Diagnosis
-                    </h3>
-                    <p className="text-foreground leading-relaxed">{report.diagnosis}</p>
-                  </CardContent>
-                </Card>
+        {/* ------------------ REPORT SCREEN ------------------ */}
+        {report && selectedImage && !isLoading && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center">
+              <h2 className="text-3xl font-bold">Medical Report</h2>
 
-                <Card className="lg:col-span-2 hover-scale transition-all">
-                  <CardContent className="p-6 space-y-4">
-                    <h3 className="text-xl font-semibold text-secondary border-b pb-2">
-                      Recommendations
-                    </h3>
-                    <p className="text-foreground leading-relaxed">{report.recommendations}</p>
-                  </CardContent>
-                </Card>
+              <div className="flex gap-2">
+                <Button onClick={handleDownloadReport}>
+                  <Download className="mr-2 h-4 w-4" /> Download Report
+                </Button>
+
+                <Button variant="outline" onClick={resetUpload}>
+                  New Report
+                </Button>
               </div>
             </div>
-          )}
-        </div>
-      </main>
-  );
-};
 
-export default Dashboard;
+            <Card className="p-6">
+              <CardContent className="space-y-6">
+                <img
+                  src={selectedImage}
+                  alt="Uploaded"
+                  className="w-full max-h-96 object-contain rounded-lg border"
+                />
+
+                <div className="space-y-2">
+                  <p><strong>Name:</strong> {report.name}</p>
+                  <p><strong>Age:</strong> {report.age}</p>
+                  <p><strong>Gender:</strong> {report.gender}</p>
+                  <p><strong>Date:</strong> {report.dateOfTest}</p>
+                  <p><strong>Diagnosis:</strong> {report.diagnosis}</p>
+                  <p><strong>Recommendations:</strong> {report.recommendations}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

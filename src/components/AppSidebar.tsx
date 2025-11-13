@@ -28,6 +28,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel>Medical Portal</SidebarGroupLabel>
           <SidebarGroupContent>
+            <div className="h-7 w-full"></div>
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
