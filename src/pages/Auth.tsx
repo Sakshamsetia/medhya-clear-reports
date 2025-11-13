@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import authBackground from "@/assets/auth-background.jpg";
 
 const Auth = () => {
+  const navigate = useNavigate();
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [signupType, setSignupType] = useState<"patient" | "doctor">("patient");
@@ -30,7 +31,7 @@ const Auth = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Login:", { email: loginEmail, password: loginPassword });
-    // TODO: Implement login logic
+    navigate("/dashboard");
   };
 
   const handlePatientSignup = (e: React.FormEvent) => {
@@ -41,7 +42,7 @@ const Auth = () => {
       password: patientPassword,
       location: patientLocation,
     });
-    // TODO: Implement patient signup logic
+    navigate("/dashboard");
   };
 
   const handleDoctorSignup = (e: React.FormEvent) => {
@@ -54,7 +55,7 @@ const Auth = () => {
       specialization: doctorSpecialization,
       qualifications: doctorQualifications,
     });
-    // TODO: Implement doctor signup logic
+    navigate("/dashboard");
   };
 
   return (
