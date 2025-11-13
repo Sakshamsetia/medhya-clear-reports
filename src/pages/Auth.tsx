@@ -7,16 +7,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import authBackground from "@/assets/auth-background.jpg";
+import supabase from "@/lib/supabaseClient";
 
 const Auth = () => {
   const navigate = useNavigate();
+
+  // login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // signup flow selection
   const [signupType, setSignupType] = useState<"patient" | "doctor">("patient");
+  const [signupLoading, setSignupLoading] = useState(false);
 
   // Patient signup fields
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [patientSex, setPatientSex] = useState("");
+  const [patientdob, setPatientdob] = useState("");
   const [patientPassword, setPatientPassword] = useState("");
   const [patientLocation, setPatientLocation] = useState("");
 
@@ -27,35 +36,158 @@ const Auth = () => {
   const [doctorLocation, setDoctorLocation] = useState("");
   const [doctorSpecialization, setDoctorSpecialization] = useState("");
   const [doctorQualifications, setDoctorQualifications] = useState("");
+  const [doctorLicenseNumber, setDoctorLicenseNumber] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  // ---------- Login Handler (Supabase) ----------
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Login:", { email: loginEmail, password: loginPassword });
-    navigate("/dashboard");
+    setLoginLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: loginPassword,
+      });
+
+      if (error) {
+        alert(`Login error: ${error.message}`);
+        return;
+      }
+
+      // success
+      alert("Logged in successfully");
+      navigate("/dashboard");
+    } catch (err: any) {
+      console.error(err);
+      alert("An unexpected error occurred during login.");
+    } finally {
+      setLoginLoading(false);
+    }
   };
 
-  const handlePatientSignup = (e: React.FormEvent) => {
+  // ---------- Helper: update profile row in 'patients' or 'doctors' ----------
+  // Uses update() (requires user to be authenticated). If row doesn't exist, upsert is attempted.
+  const updateProfileTable = async (userId: string, role: "patient" | "doctor", profile: Record<string, any>) => {
+    try {
+      if (role === "doctor") {
+        // update doctor row (use upsert to be safe)
+        const { error } = await supabase
+          .from("doctors")
+          .upsert({ id: userId, email: profile.email, name: profile.name, location: profile.location, specialization: profile.specialization, qualifications: profile.qualifications, license_number: profile.license_number }, { onConflict: "id" });
+        return error;
+      } else {
+        // patient
+        // ensure DOB is in YYYY-MM-DD format if provided as DD/MM/YYYY
+        let dobIso = profile.dob;
+        if (dobIso && /^\d{2}\/\d{2}\/\d{4}$/.test(dobIso)) {
+          const [d, m, y] = dobIso.split("/");
+          dobIso = `${y}-${m}-${d}`; // YYYY-MM-DD
+        }
+        const { error } = await supabase
+          .from("patients")
+          .upsert({ id: userId, email: profile.email, name: profile.name, location: profile.location, sex: profile.sex, dob: dobIso }, { onConflict: "id" });
+        return error;
+      }
+    } catch (err: any) {
+      console.error("updateProfileTable error", err);
+      return err;
+    }
+  };
+
+  // ---------- Patient Signup Handler (Supabase) ----------
+  const handlePatientSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Patient Signup:", {
-      name: patientName,
+    setSignupLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
       email: patientEmail,
       password: patientPassword,
-      location: patientLocation,
+      options: {
+        data: { role: "patient" },
+      }
     });
-    navigate("/dashboard");
+      if (error) {
+        alert(`Signup error: ${error.message}`);
+        return;
+      }
+
+      const getUserRes = await supabase.auth.getUser();
+      const user = getUserRes?.data?.user ?? data?.user ?? null;
+
+      if (user && user.id) {
+        const profile = {
+          name: patientName,
+          email: patientEmail,
+          location: patientLocation,
+          sex: patientSex,
+          dob: patientdob,
+        };
+
+        const profileError = await updateProfileTable(user.id, "patient", profile);
+        if (profileError) {
+          console.warn("Patient profile insertion/update error:", profileError);
+        }
+        alert("Signup successful. You're signed in.");
+        navigate("/dashboard");
+      } else {
+        alert("Signup successful. Please check your email to confirm your account. After confirming, log in to complete your profile.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("An unexpected error occurred during signup.");
+    } finally {
+      setSignupLoading(false);
+    }
   };
 
-  const handleDoctorSignup = (e: React.FormEvent) => {
+  // ---------- Doctor Signup Handler (Supabase) ----------
+  const handleDoctorSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Doctor Signup:", {
-      name: doctorName,
-      email: doctorEmail,
-      password: doctorPassword,
-      location: doctorLocation,
-      specialization: doctorSpecialization,
-      qualifications: doctorQualifications,
-    });
-    navigate("/dashboard");
+    setSignupLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp(
+        {
+          email: doctorEmail,
+          password: doctorPassword,
+          options: {
+            data: { role: "patient" },
+          }
+        }
+      );
+
+      if (error) {
+        alert(`Signup error: ${error.message}`);
+        return;
+      }
+
+      const getUserRes = await supabase.auth.getUser();
+      const user = getUserRes?.data?.user ?? data?.user ?? null;
+
+      if (user && user.id) {
+        const profile = {
+          name: doctorName,
+          email: doctorEmail,
+          location: doctorLocation,
+          specialization: doctorSpecialization,
+          qualifications: doctorQualifications,
+          license_number: doctorLicenseNumber,
+        };
+
+        const profileError = await updateProfileTable(user.id, "doctor", profile);
+        if (profileError) {
+          console.warn("Doctor profile insertion/update error:", profileError);
+        }
+
+        alert("Doctor signup successful. You're signed in.");
+        navigate("/dashboard");
+      } else {
+        alert("Signup successful. Please check your email to confirm your account. After confirming, log in to complete your profile.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("An unexpected error occurred during doctor signup.");
+    } finally {
+      setSignupLoading(false);
+    }
   };
 
   return (
@@ -108,8 +240,8 @@ const Auth = () => {
                         required
                       />
                     </div>
-                    <Button type="submit" className="w-full">
-                      Login
+                    <Button type="submit" className="w-full" disabled={loginLoading}>
+                      {loginLoading ? "Signing in..." : "Login"}
                     </Button>
                   </form>
                 </CardContent>
@@ -153,13 +285,22 @@ const Auth = () => {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="patient-password">Password</Label>
+                          <Label htmlFor="patient-sex">Gender</Label>
                           <Input
-                            id="patient-password"
-                            type="password"
-                            placeholder="••••••••"
-                            value={patientPassword}
-                            onChange={(e) => setPatientPassword(e.target.value)}
+                            id="patient-sex"
+                            placeholder="Male/Female"
+                            value={patientSex}
+                            onChange={(e) => setPatientSex(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="patient-dob">Date of Birth</Label>
+                          <Input
+                            id="patient-dob"
+                            placeholder="DD/MM/YYYY"
+                            value={patientdob}
+                            onChange={(e) => setPatientdob(e.target.value)}
                             required
                           />
                         </div>
@@ -173,8 +314,20 @@ const Auth = () => {
                             required
                           />
                         </div>
-                        <Button type="submit" className="w-full">
-                          Sign Up as Patient
+                        <div className="space-y-2">
+                          <Label htmlFor="patient-password">Password</Label>
+                          <Input
+                            id="patient-password"
+                            type="password"
+                            placeholder="••••••••"
+                            value={patientPassword}
+                            onChange={(e) => setPatientPassword(e.target.value)}
+                            required
+                          />
+                        </div>
+
+                        <Button type="submit" className="w-full" disabled={signupLoading}>
+                          {signupLoading ? "Signing up..." : "Sign Up as Patient"}
                         </Button>
                       </form>
                     </TabsContent>
@@ -243,8 +396,20 @@ const Auth = () => {
                             required
                           />
                         </div>
-                        <Button type="submit" className="w-full">
-                          Sign Up as Doctor
+
+                        <div className="space-y-2">
+                          <Label htmlFor="doctor-license">License number</Label>
+                          <Input
+                            id="doctor-license"
+                            placeholder="License number / registration ID"
+                            value={doctorLicenseNumber}
+                            onChange={(e) => setDoctorLicenseNumber(e.target.value)}
+                            required
+                          />
+                        </div>
+
+                        <Button type="submit" className="w-full" disabled={signupLoading}>
+                          {signupLoading ? "Signing up..." : "Sign Up as Doctor"}
                         </Button>
                       </form>
                     </TabsContent>
@@ -256,13 +421,8 @@ const Auth = () => {
         </div>
       </div>
 
-      {/* Right side - Image */}
       <div className="hidden lg:block relative">
-        <img
-          src={authBackground}
-          alt="Medical Professional"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+        <img src={authBackground} alt="Medical Professional" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-primary/10" />
       </div>
     </div>
