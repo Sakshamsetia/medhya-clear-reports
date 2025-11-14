@@ -9,7 +9,7 @@ import MedicalLoader from "@/components/MedicalLoader";
 import jsPDF from "jspdf";
 import ParticleBackground from '@/components/particle';
 import supabase from "@/lib/supabaseClient";
-import { analyzeImageViaProxy } from "@/api/analyzeImage";
+import { analyzeImageViaProxy } from "@/lib/analyzeImage";
 
 interface MedicalReport {
   name: string;
