@@ -1,20 +1,24 @@
 /**
  * API handler for image analysis
- * This proxies requests to the external API
+ * Works on Vercel + local dev
  */
-const url = import.meta.env.VITE_BACKEND_URL
-export const analyzeImageViaProxy = async (imageFile: File) => {
-    console.log(url)
-  try {
-    // Create FormData and append the image file
-    const formData = new FormData();
-    formData.append('image', imageFile);
 
-    // Call the API endpoint with multipart/form-data
-    const response = await fetch(`http://${url}:3000/analyse`, {
-        
-      method: 'POST',
-      // Don't set Content-Type header - browser will set it automatically with boundary
+// Always define full URL inside the variable (no http:// inside code)
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL; 
+// Example:
+// VITE_BACKEND_URL=http://34.148.8.28:3000
+
+export const analyzeImageViaProxy = async (imageFile: File) => {
+  try {
+    if (!BACKEND_URL) {
+      throw new Error("VITE_BACKEND_URL is not defined");
+    }
+
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const response = await fetch(`http://${BACKEND_URL}:3000/analyse`, {
+      method: "POST",
       body: formData,
     });
 
@@ -22,7 +26,7 @@ export const analyzeImageViaProxy = async (imageFile: File) => {
       const errorData = await response.json().catch(() => ({}));
       throw new Error(
         `API request failed with status ${response.status}: ${
-          errorData.message || 'Unknown error'
+          errorData.message || "Unknown error"
         }`
       );
     }
@@ -30,7 +34,7 @@ export const analyzeImageViaProxy = async (imageFile: File) => {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error analyzing image:', error);
+    console.error("Error analyzing image:", error);
     throw error;
   }
 };
