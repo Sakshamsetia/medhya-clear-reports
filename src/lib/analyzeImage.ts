@@ -17,7 +17,7 @@ export const analyzeImageViaProxy = async (imageFile: File) => {
     const formData = new FormData();
     formData.append("image", imageFile);
 
-    const response = await fetch(`http://${BACKEND_URL}:3000/analyse`, {
+    const response = await fetch(`http://${BACKEND_URL}/analyse`, {
       method: "POST",
       body: formData,
     });
