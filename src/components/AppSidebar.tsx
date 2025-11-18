@@ -1,4 +1,4 @@
-import { Home, Users } from "lucide-react";
+import { Home, Users , MessageSquare} from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 
 import {
@@ -16,6 +16,8 @@ import {
 const items = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Doctors", url: "/doctors", icon: Users },
+  { title: "Records", url: "/records", icon: MessageSquare },
+  { title: "Chat", url: "/chats", icon: MessageSquare },
 ];
 
 export function AppSidebar() {

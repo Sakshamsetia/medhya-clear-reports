@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import DoctorCard from "@/components/DoctorCard";
 import MedicalLoader from "@/components/MedicalLoader";
 import supabase from "@/lib/supabaseClient";
-import ParticleBackground from '@/components/particle'
 
 // Shape expected by DoctorCard / component
 interface Doctor {
@@ -69,8 +68,7 @@ const DoctorsPage = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-accent">
-      <ParticleBackground/>
+    <div className="min-h-screen">
       <div className="container mx-auto py-12 px-4 sm:px-6 lg:px-8">
         <div className="space-y-8">
           <div className="text-center space-y-4">

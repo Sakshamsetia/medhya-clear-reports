@@ -14,6 +14,7 @@ import ParticleBackground from '@/components/particle'
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   // login
   const [loginEmail, setLoginEmail] = useState("");
@@ -40,12 +41,12 @@ const Auth = () => {
   const [doctorSpecialization, setDoctorSpecialization] = useState("");
   const [doctorQualifications, setDoctorQualifications] = useState("");
   const [doctorLicenseNumber, setDoctorLicenseNumber] = useState("");
-  const { toast } = useToast();
 
   // ---------- Login Handler (Supabase) ----------
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginLoading(true);
+    
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
@@ -54,50 +55,147 @@ const Auth = () => {
 
       if (error) {
         toast({
-      title: "Login Error",
-      description: error.message,
-    });
+          title: "Login Error",
+          description: error.message,
+          variant: "destructive",
+        });
         return;
       }
 
-      // success
-toast({
-      title: "Login Successfull",
-      description: ".",
-    });      navigate("/dashboard");
+      // Check if user has a profile in patients or doctors table
+      const userId = data.user?.id;
+      const userRole = data.user?.user_metadata?.role;
+
+      if (userId && userRole) {
+        // Check if profile exists
+        if (userRole === "patient") {
+          const { data: patientData, error: patientError } = await supabase
+            .from("patients")
+            .select("id")
+            .eq("id", userId)
+            .single();
+
+          if (patientError && patientError.code === "PGRST116") {
+            // Profile doesn't exist, create basic profile
+            await supabase.from("patients").insert({
+              id: userId,
+              email: data.user.email!,
+              name: data.user.user_metadata?.name || data.user.email!,
+            });
+          }
+        } else if (userRole === "doctor") {
+          const { data: doctorData, error: doctorError } = await supabase
+            .from("doctors")
+            .select("id")
+            .eq("id", userId)
+            .single();
+
+          if (doctorError && doctorError.code === "PGRST116") {
+            // Profile doesn't exist, create basic profile
+            await supabase.from("doctors").insert({
+              id: userId,
+              email: data.user.email!,
+              name: data.user.user_metadata?.name || data.user.email!,
+            });
+          }
+        }
+      }
+
+      toast({
+        title: "Login Successful",
+        description: "Welcome back!",
+      });
+      
+      navigate("/dashboard");
     } catch (err: any) {
       console.error(err);
       toast({
-      title: "Unexpected Error",
-      description: ".",
-    });
+        title: "Unexpected Error",
+        description: err.message || "Something went wrong",
+        variant: "destructive",
+      });
     } finally {
       setLoginLoading(false);
     }
   };
 
+  // ---------- Helper: Format DOB to ISO format ----------
+  const formatDobToISO = (dob: string): string | null => {
+    if (!dob) return null;
+    
+    // If already in YYYY-MM-DD format
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+      return dob;
+    }
+    
+    // If in DD/MM/YYYY format
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dob)) {
+      const [d, m, y] = dob.split("/");
+      return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    
+    return null;
+  };
+
   // ---------- Helper: update profile row in 'patients' or 'doctors' ----------
-  // Uses update() (requires user to be authenticated). If row doesn't exist, upsert is attempted.
-  const updateProfileTable = async (userId: string, role: "patient" | "doctor", profile: Record<string, any>) => {
+  const updateProfileTable = async (
+    userId: string, 
+    role: "patient" | "doctor", 
+    profile: Record<string, any>
+  ) => {
     try {
       if (role === "doctor") {
-        // update doctor row (use upsert to be safe)
         const { error } = await supabase
           .from("doctors")
-          .upsert({ id: userId, email: profile.email, name: profile.name, location: profile.location, specialization: profile.specialization, qualifications: profile.qualifications, license_number: profile.license_number }, { onConflict: "id" });
-        return error;
-      } else {
-        // patient
-        // ensure DOB is in YYYY-MM-DD format if provided as DD/MM/YYYY
-        let dobIso = profile.dob;
-        if (dobIso && /^\d{2}\/\d{2}\/\d{4}$/.test(dobIso)) {
-          const [d, m, y] = dobIso.split("/");
-          dobIso = `${y}-${m}-${d}`; // YYYY-MM-DD
+          .upsert(
+            {
+              id: userId,
+              email: profile.email,
+              name: profile.name,
+              location: profile.location,
+              specialization: profile.specialization,
+              qualifications: profile.qualifications,
+              license_number: profile.license_number,
+            },
+            { 
+              onConflict: "id",
+              ignoreDuplicates: false 
+            }
+          );
+        
+        if (error) {
+          console.error("Doctor profile upsert error:", error);
+          return error;
         }
+        
+        return null;
+      } else {
+        // Patient
+        const dobIso = formatDobToISO(profile.dob);
+        
         const { error } = await supabase
           .from("patients")
-          .upsert({ id: userId, email: profile.email, name: profile.name, location: profile.location, sex: profile.sex, dob: dobIso }, { onConflict: "id" });
-        return error;
+          .upsert(
+            {
+              id: userId,
+              email: profile.email,
+              name: profile.name,
+              location: profile.location,
+              sex: profile.sex,
+              dob: dobIso,
+            },
+            { 
+              onConflict: "id",
+              ignoreDuplicates: false 
+            }
+          );
+        
+        if (error) {
+          console.error("Patient profile upsert error:", error);
+          return error;
+        }
+        
+        return null;
       }
     } catch (err: any) {
       console.error("updateProfileTable error", err);
@@ -109,55 +207,83 @@ toast({
   const handlePatientSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupLoading(true);
+    
     try {
-      const { data, error } = await supabase.auth.signUp({
-      email: patientEmail,
-      password: patientPassword,
-      options: {
-        data: { role: "patient" },
-      }
-    });
-      if (error) {
+      // Step 1: Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: patientEmail,
+        password: patientPassword,
+        options: {
+          data: { 
+            role: "patient",
+            name: patientName 
+          },
+        },
+      });
+
+      if (authError) {
         toast({
-      title: "SignUp Error",
-      description: error.message,
-    });
+          title: "SignUp Error",
+          description: authError.message,
+          variant: "destructive",
+        });
         return;
       }
 
-      const getUserRes = await supabase.auth.getUser();
-      const user = getUserRes?.data?.user ?? data?.user ?? null;
+      // Step 2: Get user ID
+      const userId = authData.user?.id;
 
-      if (user && user.id) {
-        const profile = {
-          name: patientName,
-          email: patientEmail,
-          location: patientLocation,
-          sex: patientSex,
-          dob: patientdob,
-        };
-
-        const profileError = await updateProfileTable(user.id, "patient", profile);
-        if (profileError) {
-          console.warn("Patient profile insertion/update error:", profileError);
-        }
+      if (!userId) {
         toast({
-      title: "SignUP Done",
-      description: ".",
-    });
+          title: "Error",
+          description: "User ID not found after signup",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Step 3: Insert/Update patient profile
+      const profile = {
+        name: patientName,
+        email: patientEmail,
+        location: patientLocation,
+        sex: patientSex,
+        dob: patientdob,
+      };
+
+      const profileError = await updateProfileTable(userId, "patient", profile);
+      
+      if (profileError) {
+        console.error("Patient profile error:", profileError);
+        toast({
+          title: "Profile Error",
+          description: "Account created but profile update failed. Please complete your profile in settings.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "SignUp Successful",
+          description: "Your patient account has been created!",
+        });
+      }
+
+      // Navigate to dashboard if session exists, otherwise ask to verify email
+      if (authData.session) {
         navigate("/dashboard");
       } else {
         toast({
-      title: "SignUp done",
-      description: "Please check email for validation.",
-    });
+          title: "Verify Your Email",
+          description: "Please check your email to verify your account.",
+        });
       }
+
     } catch (err: any) {
       console.error(err);
       toast({
-      title: "Unknown Error",
-      description: "An unexpected error occurred during signup.",
-    });
+        title: "Unexpected Error",
+        description: err.message || "An unexpected error occurred during signup.",
+        variant: "destructive",
+      });
     } finally {
       setSignupLoading(false);
     }
@@ -167,58 +293,85 @@ toast({
   const handleDoctorSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupLoading(true);
+    
     try {
-      const { data, error } = await supabase.auth.signUp(
-        {
-          email: doctorEmail,
-          password: doctorPassword,
-          options: {
-            data: { role: "patient" },
-          }
-        }
-      );
+      // Step 1: Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: doctorEmail,
+        password: doctorPassword,
+        options: {
+          data: { 
+            role: "doctor",
+            name: doctorName 
+          },
+        },
+      });
 
-      if (error) {
+      if (authError) {
         toast({
-      title: "SignUP Done",
-      description:error.message,
-    });
-                return;
+          title: "SignUp Error",
+          description: authError.message,
+          variant: "destructive",
+        });
+        return;
       }
 
-      const getUserRes = await supabase.auth.getUser();
-      const user = getUserRes?.data?.user ?? data?.user ?? null;
+      // Step 2: Get user ID
+      const userId = authData.user?.id;
 
-      if (user && user.id) {
-        const profile = {
-          name: doctorName,
-          email: doctorEmail,
-          location: doctorLocation,
-          specialization: doctorSpecialization,
-          qualifications: doctorQualifications,
-          license_number: doctorLicenseNumber,
-        };
+      if (!userId) {
+        toast({
+          title: "Error",
+          description: "User ID not found after signup",
+          variant: "destructive",
+        });
+        return;
+      }
 
-        const profileError = await updateProfileTable(user.id, "doctor", profile);
-        if (profileError) {
-          console.warn("Doctor profile insertion/update error:", profileError);
-        }
-toast({
-      title: "SignUP Done",
-      description: "You are signed Up Successfully",
-    });
+      // Step 3: Insert/Update doctor profile
+      const profile = {
+        name: doctorName,
+        email: doctorEmail,
+        location: doctorLocation,
+        specialization: doctorSpecialization,
+        qualifications: doctorQualifications,
+        license_number: doctorLicenseNumber,
+      };
+
+      const profileError = await updateProfileTable(userId, "doctor", profile);
+      
+      if (profileError) {
+        console.error("Doctor profile error:", profileError);
+        toast({
+          title: "Profile Error",
+          description: "Account created but profile update failed. Please complete your profile in settings.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "SignUp Successful",
+          description: "Your doctor account has been created!",
+        });
+      }
+
+      // Navigate to dashboard if session exists, otherwise ask to verify email
+      if (authData.session) {
         navigate("/dashboard");
       } else {
-toast({
-      title: "SignUP Done",
-      description: "You are signed Up Successfully",
-    });      }
+        toast({
+          title: "Verify Your Email",
+          description: "Please check your email to verify your account.",
+        });
+      }
+
     } catch (err: any) {
       console.error(err);
-toast({
-      title: "Unexpected error",
-      description: err.message,
-    });    } finally {
+      toast({
+        title: "Unexpected Error",
+        description: err.message || "An unexpected error occurred during signup.",
+        variant: "destructive",
+      });
+    } finally {
       setSignupLoading(false);
     }
   };
@@ -332,7 +485,7 @@ toast({
                           <Label htmlFor="patient-dob">Date of Birth</Label>
                           <Input
                             id="patient-dob"
-                            placeholder="DD/MM/YYYY"
+                            type="date"
                             value={patientdob}
                             onChange={(e) => setPatientdob(e.target.value)}
                             required

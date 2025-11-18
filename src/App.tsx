@@ -11,15 +11,21 @@ import Doctors from "./pages/Doctors";
 import DashboardLayout from "./components/DashboardLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
+import ParticleBackground from '@/components/particle'
+import Chat from "./pages/Chat";
+import { PatientReportProvider } from "@/context/PatientReportContext";
+import Records from "./pages/records";
 
 const queryClient = new QueryClient();
 
 const App = () => (
+  <PatientReportProvider>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <ParticleBackground />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/about" element={<About />} />
@@ -27,12 +33,15 @@ const App = () => (
           <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="doctors" element={<Doctors />} />
+            <Route path="records" element={<Records />} />
+            <Route path="chats" element={<Chat />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </PatientReportProvider>
 );
 
 export default App;

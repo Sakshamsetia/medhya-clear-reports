@@ -6,6 +6,45 @@
 All colors MUST be HSL.
 */
 
+#chat-box{
+  margin-top: 5vh;
+  height: 80vh;
+}
+@media  screen and (max-width:530px) {
+  #chat-box h1{
+    font-size: 30px;
+  }
+  
+}
+#chat-messages {
+  overflow-y: scroll;
+  max-height: 65vh;
+
+  /* For Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent; /* thumb color, track color */
+}
+
+/* Webkit browsers (Chrome, Edge, Safari) */
+#chat-messages::-webkit-scrollbar {
+  width: 6px; /* scrollbar width */
+}
+
+#chat-messages::-webkit-scrollbar-track {
+  background: transparent; /* track background */
+}
+
+#chat-messages::-webkit-scrollbar-thumb {
+  background-color: #94a3b8; /* thumb color */
+  border-radius: 3px; /* rounded edges */
+}
+
+#chat-messages::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b; /* hover color */
+}
+
+
+
 @layer base {
   :root {
     --background: 0 0% 100%;
