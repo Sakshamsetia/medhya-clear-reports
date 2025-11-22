@@ -86,7 +86,7 @@ export default function Records() {
         setReport(selectedReport);
         // Close modal and navigate
         setSelectedReport(null);
-        navigate('/ask-doctor');
+        navigate('/doctors');
     };
 
     useEffect(() => {

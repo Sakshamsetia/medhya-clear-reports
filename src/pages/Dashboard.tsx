@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Upload, Camera, Download, MessageSquare, Stethoscope, Terminal } from "lucide-react";
+import { Upload, Camera, Download, MessageSquare, Stethoscope, Terminal, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import MedicalLoader from "@/components/MedicalLoader";
 import jsPDF from "jspdf";
@@ -25,7 +25,7 @@ interface TerminalLine {
 }
 
 /* ------------------------------------------------------------------
-   CAMERA COMPONENT
+   CAMERA COMPONENT - ENHANCED MOBILE VERSION
 -------------------------------------------------------------------- */
 const CameraCapture = ({
   onCapture,
@@ -36,67 +36,245 @@ const CameraCapture = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [error, setError] = useState<string>("");
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    let currentStream: MediaStream | null = null;
+
     const startCamera = async () => {
       try {
-        const camStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
+        // Try with back camera first (better for mobile)
+        let constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        };
 
-        setStream(camStream);
-        if (videoRef.current) videoRef.current.srcObject = camStream;
+        try {
+          currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          // Fallback: try with any camera
+          console.warn("Back camera not available, trying any camera:", err);
+          constraints = {
+            video: {
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            },
+            audio: false
+          };
+          currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        }
+
+        if (!mounted) {
+          // Component unmounted, stop the stream
+          currentStream?.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        setStream(currentStream);
+        
+        if (videoRef.current) {
+          videoRef.current.srcObject = currentStream;
+          
+          // Wait for video to be ready
+          videoRef.current.onloadedmetadata = () => {
+            if (mounted) {
+              videoRef.current?.play().then(() => {
+                setIsReady(true);
+              }).catch(err => {
+                console.error("Error playing video:", err);
+                setError("Failed to start camera preview");
+              });
+            }
+          };
+        }
       } catch (error) {
         console.error("Camera error:", error);
-        onClose();
+        if (mounted) {
+          if (error instanceof DOMException) {
+            if (error.name === "NotAllowedError") {
+              setError("Camera access denied. Please allow camera permissions.");
+            } else if (error.name === "NotFoundError") {
+              setError("No camera found on this device.");
+            } else if (error.name === "NotReadableError") {
+              setError("Camera is already in use by another application.");
+            } else {
+              setError("Unable to access camera. Please try again.");
+            }
+          } else {
+            setError("An unexpected error occurred while accessing the camera.");
+          }
+          
+          // Auto close after showing error
+          setTimeout(() => {
+            if (mounted) onClose();
+          }, 3000);
+        }
       }
     };
 
     startCamera();
 
+    // Cleanup function
     return () => {
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      mounted = false;
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => {
+          track.stop();
+        });
+      }
     };
-  }, [onClose, stream]);
+  }, []); // Empty dependency array
 
   const captureImage = () => {
-    const video = videoRef.current!;
+    if (!videoRef.current || !isReady) {
+      setError("Camera not ready yet. Please wait.");
+      return;
+    }
+
+    const video = videoRef.current;
     const canvas = document.createElement("canvas");
 
+    // Set canvas size to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(video, 0, 0);
+    // Handle case where video dimensions aren't available yet
+    if (canvas.width === 0 || canvas.height === 0) {
+      setError("Camera not ready. Please try again.");
+      return;
+    }
 
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `capture_${Date.now()}.jpg`, {
-          type: 'image/jpeg',
-        });
-        const preview = canvas.toDataURL("image/jpeg");
-        onCapture(file, preview);
-      }
-    }, 'image/jpeg', 0.95);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      setError("Failed to create canvas context");
+      return;
+    }
+
+    // Draw the video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert canvas to blob, then to File
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const file = new File([blob], `medical_capture_${Date.now()}.jpg`, {
+            type: "image/jpeg",
+          });
+          const preview = canvas.toDataURL("image/jpeg", 0.95);
+
+          // Stop the camera stream
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+
+          onCapture(file, preview);
+        } else {
+          setError("Failed to capture image. Please try again.");
+        }
+      },
+      "image/jpeg",
+      0.95
+    );
+  };
+
+  const handleClose = () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 z-[999] flex flex-col items-center justify-center p-4">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="w-full max-w-md rounded-lg shadow-xl border-2 border-white"
-      />
-
-      <div className="flex gap-4 mt-6">
-        <Button size="lg" onClick={captureImage}>
-          Capture
-        </Button>
-        <Button size="lg" variant="outline" onClick={onClose}>
-          Close
+    <div className="fixed inset-0 bg-black z-[9999] flex flex-col">
+      {/* Close button - top right */}
+      <div className="absolute top-4 right-4 z-10">
+        <Button 
+          size="icon" 
+          variant="ghost" 
+          onClick={handleClose}
+          className="bg-white/20 hover:bg-white/30 text-white rounded-full h-12 w-12"
+        >
+          <X className="h-6 w-6" />
         </Button>
       </div>
+
+      {/* Video container */}
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden">
+        {error ? (
+          <div className="text-center p-6">
+            <div className="bg-red-500/20 border border-red-500 rounded-lg p-4 mb-4">
+              <p className="text-white text-lg">{error}</p>
+            </div>
+            <Button onClick={handleClose} variant="secondary">
+              Close
+            </Button>
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{
+                transform: 'scaleX(1)', // Remove mirror effect on mobile
+              }}
+            />
+            
+            {/* Camera ready indicator */}
+            {!isReady && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="text-white text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                  <p>Starting camera...</p>
+                </div>
+              </div>
+            )}
+
+            {/* Capture frame guide */}
+            {isReady && (
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-4 border-2 border-white/50 rounded-lg" />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Controls - bottom */}
+      {!error && (
+        <div className="bg-black/80 p-6 flex flex-col gap-4">
+          <Button 
+            size="lg" 
+            onClick={captureImage}
+            disabled={!isReady}
+            className="w-full h-14 text-lg"
+          >
+            <Camera className="mr-2 h-5 w-5" />
+            {isReady ? "Capture Photo" : "Preparing Camera..."}
+          </Button>
+          
+          <Button 
+            size="lg" 
+            variant="outline" 
+            onClick={handleClose}
+            className="w-full h-14 text-lg"
+          >
+            Cancel
+          </Button>
+
+          <p className="text-center text-white/70 text-sm">
+            Position the medical report within the frame
+          </p>
+        </div>
+      )}
     </div>
   );
 };
@@ -172,7 +350,7 @@ export default function Dashboard() {
 
       const { data: patientData, error: patientError } = await supabase
         .from('patients')
-        .select('name,sex,dob')
+        .select('name')
         .eq('id', user.id)
         .single();
 
@@ -409,8 +587,10 @@ export default function Dashboard() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Store the actual File object
     setImageFile(file);
 
+    // Create preview URL
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageData = reader.result as string;
@@ -443,6 +623,7 @@ export default function Dashboard() {
 
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
     let imgBase64 = null;
     if (imageFile) {
@@ -454,7 +635,9 @@ export default function Dashboard() {
     const primaryColor = "#0A4A78";
     const lightGray = "#f1f1f1";
     const textDark = "#333";
+    const warningRed = "#DC2626";
 
+    // Header
     pdf.setFillColor(primaryColor);
     pdf.rect(0, 0, pageWidth, 30, "F");
     pdf.setFont("helvetica", "bold");
@@ -468,6 +651,27 @@ export default function Dashboard() {
 
     let y = 40;
 
+    // AI DISCLAIMER BOX
+    pdf.setFillColor(255, 245, 245); // Light red background
+    pdf.setDrawColor(warningRed);
+    pdf.setLineWidth(0.5);
+    pdf.rect(10, y, pageWidth - 20, 20, "FD");
+    
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(warningRed);
+    pdf.text("⚠ AI DISCLAIMER", 15, y + 6);
+    
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(textDark);
+    const disclaimerText = "I am an AI, not a doctor. This analysis is for informational purposes only and should be verified by a qualified healthcare professional. Do not use this report as a substitute for professional medical advice, diagnosis, or treatment.";
+    const disclaimerLines = pdf.splitTextToSize(disclaimerText, pageWidth - 30);
+    pdf.text(disclaimerLines, 15, y + 12);
+
+    y += 30;
+
+    // Patient Information
     pdf.setFont("normal", "normal");
     pdf.setFillColor(lightGray);
     pdf.rect(10, y, pageWidth - 20, 10, "F");
@@ -481,12 +685,11 @@ export default function Dashboard() {
     pdf.setTextColor(textDark);
 
     pdf.text(`Name: ${report.name}`, 15, y);
-    pdf.text(`Gender: ${report.gender}`, 15, y + 7);
-    pdf.text(`Date of Birth: ${report.dateOfBirth}`, 15, y + 14);
     pdf.text(`Date of Test: ${report.dateOfTest}`, 15, y + 21);
 
     y += 35;
 
+    // Diagnosis
     pdf.setFillColor(lightGray);
     pdf.rect(10, y, pageWidth - 20, 10, "F");
     pdf.setFontSize(14);
@@ -502,6 +705,13 @@ export default function Dashboard() {
 
     y += diagLines.length * 7 + 10;
 
+    // Check if we need a new page
+    if (y > pageHeight - 80) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    // Explanation
     pdf.setFillColor(lightGray);
     pdf.rect(10, y, pageWidth - 20, 10, "F");
     pdf.setFontSize(14);
@@ -517,7 +727,14 @@ export default function Dashboard() {
 
     y += expLines.length * 7 + 15;
 
+    // Attached Image
     if (imgBase64) {
+      // Check if we need a new page for the image
+      if (y + 170 > pageHeight - 10) {
+        pdf.addPage();
+        y = 20;
+      }
+
       pdf.setFillColor(lightGray);
       pdf.rect(10, y, pageWidth - 20, 10, "F");
       pdf.setFontSize(14);
@@ -529,7 +746,7 @@ export default function Dashboard() {
       const imgWidth = pageWidth - 40;
       const imgHeight = 150;
 
-      if (y + imgHeight > pdf.internal.pageSize.getHeight() - 10) {
+      if (y + imgHeight > pageHeight - 10) {
         pdf.addPage();
         y = 20;
       }
@@ -537,7 +754,8 @@ export default function Dashboard() {
       pdf.addImage(imgBase64, "JPEG", 20, y, imgWidth, imgHeight);
     }
 
-    const footerY = pdf.internal.pageSize.getHeight() - 10;
+    // Footer
+    const footerY = pageHeight - 10;
     pdf.setFontSize(10);
     pdf.setTextColor("#777");
     pdf.text("© MedhyaMed — Confidential Medical Document", pageWidth / 2, footerY, { align: "center" });
@@ -566,7 +784,7 @@ export default function Dashboard() {
       });
       return;
     }
-    navigate('/ask-doctor');
+    navigate('/doctors');
   };
 
   const resetUpload = () => {
@@ -613,12 +831,15 @@ export default function Dashboard() {
 
   const [status, s_status] = useState(false)
   function thinking_click() {
-    if (status == true) {
-      document.getElementById("thinking_box").style.height = '0';
-      s_status(false)
-    } else {
-      document.getElementById("thinking_box").style.height = '150px';
-      s_status(true)
+    const box = document.getElementById("thinking_box");
+    if (box) {
+      if (status == true) {
+        box.style.height = '0';
+        s_status(false)
+      } else {
+        box.style.height = '150px';
+        s_status(true)
+      }
     }
   }
 
@@ -626,7 +847,7 @@ export default function Dashboard() {
     const [text, setText] = useState("Thinking");
 
     useEffect(() => {
-      const timer = setTimeout(() => setText("This thing may takes sometime, don't close your browser"), 10000);
+      const timer = setTimeout(() => setText("This may take some time, don't reload or close your browser"), 10000);
       return () => clearTimeout(timer);
     }, []);
 
@@ -711,7 +932,7 @@ export default function Dashboard() {
       ];
 
       const timer = setInterval(() => setText(typingMessages[Math.floor(Math.random() * 50)]), 6000);
-      return () => clearTimeout(timer);
+      return () => clearInterval(timer);
     }, []);
 
     return (
@@ -820,9 +1041,9 @@ export default function Dashboard() {
         {/* Report Display */}
         {report && !isLoading && (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <h2 className="text-3xl font-bold text-foreground">Medical Report</h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button onClick={saveReport} disabled={saving}>
                   {saving ? "Saving..." : "Save Report"}
                 </Button>
@@ -846,14 +1067,6 @@ export default function Dashboard() {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Name:</span>
                       <span className="font-medium">{report.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Gender:</span>
-                      <span className="font-medium">{report.gender}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Date of Birth:</span>
-                      <span className="font-medium">{report.dateOfBirth}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Date of Test:</span>

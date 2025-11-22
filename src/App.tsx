@@ -14,7 +14,7 @@ import NotFound from "./pages/NotFound";
 import ParticleBackground from '@/components/particle'
 import Chat from "./pages/Chat";
 import { PatientReportProvider } from "@/context/PatientReportContext";
-import Records from "./pages/records";
+import Records from "./pages/Records";
 
 const queryClient = new QueryClient();
 

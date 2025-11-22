@@ -26,7 +26,7 @@ const Index = () => {
                 Transform complex medical reports into clear, understandable insights powered by AI technology.
               </p>
               <div className="flex gap-4">
-                <Link to="/auth">
+                <Link to="/dashboard">
                   <Button size="lg" className="text-base px-8">
                     Get Started
                   </Button>

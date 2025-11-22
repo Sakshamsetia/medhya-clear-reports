@@ -79,8 +79,11 @@ const Auth = () => {
             // Profile doesn't exist, create basic profile
             await supabase.from("patients").insert({
               id: userId,
-              email: data.user.email!,
-              name: data.user.user_metadata?.name || data.user.email!,
+              email: patientEmail,
+              name: patientName,
+              sex: patientSex,
+              dob: patientdob,
+              location: patientLocation
             });
           }
         } else if (userRole === "doctor") {
