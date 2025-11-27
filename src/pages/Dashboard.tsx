@@ -862,7 +862,7 @@ export default function Dashboard() {
             animation: blink 4s infinite;
           }
           .dot:nth-child(2) { animation-delay: 0.5s; }
-          .dot:nth-child(3) { animation-delay: 1s; }
+          .dot:nth-child(3) { animation-delay: 1s; }--+
 
           @keyframes blink {
             0%, 20%, 50%, 80%, 100% { opacity: 0; }

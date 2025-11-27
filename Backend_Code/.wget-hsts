@@ -1,0 +1,8 @@
+# HSTS 1.0 Known Hosts database for GNU Wget.
+# Edit at your own risk.
+# <hostname>	<port>	<incl. subdomains>	<created>	<max-age>
+packages.adoptium.net	0	1	1761910143	31536000
+openi.nlm.nih.gov	0	1	1761914365	31536000
+stanfordmedicine.box.com	0	0	1763030443	31536000
+github.com	0	1	1761914166	31536000
+stanfordmedicine.app.box.com	0	0	1763030444	31536000

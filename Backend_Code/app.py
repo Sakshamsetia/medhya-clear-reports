@@ -1,0 +1,386 @@
+import subprocess
+import json
+import os
+import time
+from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
+import threading
+import queue
+
+from langchain_core.tools import tool
+from langchain_community.utilities import WikipediaAPIWrapper
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, SystemMessage
+from dotenv import load_dotenv
+GROQ_API_KEY = "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"
+
+
+
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all domains
+
+IMAGE_PATH = "/home/chipmonkx86/inputIMG/input.jpg"
+DATA_JSON = "/home/chipmonkx86/data.json"
+SCRIPT_PATH = "/home/chipmonkx86/script.sh"
+
+def run_script_with_output(output_queue):
+    """Run script and stream output line by line"""
+    try:
+        # Run the script and capture output in real-time
+        process = subprocess.Popen(
+            ["bash", SCRIPT_PATH],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Stream output line by line
+        for line in iter(process.stdout.readline, ''):
+            if line:
+                output_queue.put({"type": "output", "data": line.strip()})
+        
+        process.stdout.close()
+        return_code = process.wait()
+        
+        if return_code == 0:
+            output_queue.put({"type": "success", "data": "Script completed successfully"})
+            return True
+        else:
+            output_queue.put({"type": "error", "data": f"Script failed with code {return_code}"})
+            return False
+            
+    except Exception as e:
+        output_queue.put({"type": "error", "data": str(e)})
+        return False
+
+def generate_stream(output_queue):
+    """Generator function for Server-Sent Events"""
+    while True:
+        try:
+            # Get message from queue with timeout
+            message = output_queue.get(timeout=3)
+            
+            # Send as SSE format
+            yield f"data: {json.dumps(message)}\n\n"
+            
+            # If we get success or error, we're done
+            if message["type"] in ["success", "error"]:
+                break
+                
+        except queue.Empty:
+            # Send keepalive
+            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+
+@app.route('/')
+def index():
+    """Root endpoint - API information"""
+    return jsonify({
+        "service": "Medical Image Analysis API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "/": "GET - API information",
+            "/health": "GET - Health check",
+            "/analyse": "POST - Standard analysis (returns final result)",
+            "/analyse-stream": "POST - Streaming analysis (real-time output)"
+        },
+        "usage": {
+            "analyse": {
+                "method": "POST",
+                "content-type": "multipart/form-data",
+                "body": "image file with key 'image'"
+            },
+            "analyse-stream": {
+                "method": "POST",
+                "content-type": "multipart/form-data",
+                "body": "image file with key 'image'",
+                "response": "text/event-stream"
+            }
+        }
+    }), 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": time.time(),
+        "script_exists": os.path.exists(SCRIPT_PATH),
+        "image_dir_exists": os.path.exists(os.path.dirname(IMAGE_PATH))
+    }), 200
+
+@app.route('/analyse', methods=['POST', 'GET'])
+def analyse():
+    """Non-streaming endpoint - returns final result only"""
+    
+    # Handle GET request
+    if request.method == 'GET':
+        return jsonify({
+            "message": "This endpoint requires POST method",
+            "usage": "Send a POST request with an image file",
+            "example": "curl -X POST -F 'image=@yourimage.jpg' http://localhost:4000/analyse"
+        }), 200
+    
+    # Handle POST request
+    if 'image' not in request.files:
+        return jsonify({"error": "No image provided"}), 400
+
+    file = request.files['image']
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    file.save(IMAGE_PATH)
+
+    # Create a queue for this request
+    output_queue = queue.Queue()
+    
+    # Run script
+    success = run_script_with_output(output_queue)
+    
+    if not success:
+        return jsonify({"error": "Script failed"}), 500
+
+    if not os.path.exists(DATA_JSON):
+        return jsonify({"error": "data.json not found"}), 500
+
+    with open(DATA_JSON, "r") as f:
+        data = json.load(f)
+
+    return jsonify(data), 200
+
+@app.route('/analyse-stream', methods=['POST', 'GET'])
+def analyse_stream():
+    """Streaming endpoint - sends real-time terminal output"""
+    
+    # Handle GET request
+    if request.method == 'GET':
+        return jsonify({
+            "message": "This endpoint requires POST method for streaming",
+            "usage": "Send a POST request with an image file",
+            "response_type": "text/event-stream",
+            "example": "Use the frontend upload form or test with: curl -X POST -F 'image=@yourimage.jpg' http://localhost:4000/analyse-stream"
+        }), 200
+    
+    # Handle POST request
+    if 'image' not in request.files:
+        return jsonify({"error": "No image provided"}), 400
+
+    file = request.files['image']
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    file.save(IMAGE_PATH)
+
+    # Create a queue for this request
+    output_queue = queue.Queue()
+    
+    # Start script in background thread
+    thread = threading.Thread(target=run_script_with_output, args=(output_queue,))
+    thread.daemon = True
+    thread.start()
+    # Immediately send multiple tiny keepalive packets so browser stays connected
+    for _ in range(3):
+        output_queue.put({"type": "keepalive", "data": "..."})
+        time.sleep(0.1)
+
+    output_queue.put({"type": "info", "data": "Analysis started..."})
+
+    @stream_with_context
+    def generate():
+        # Stream the output
+        for event in generate_stream(output_queue):
+            yield event
+        
+        # After script completes, send final data
+        if os.path.exists(DATA_JSON):
+            with open(DATA_JSON, "r") as f:
+                data = json.load(f)
+            yield f"data: {json.dumps({'type': 'result', 'data': data})}\n\n"
+        
+        # Send done event
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        }
+    )
+
+
+# ------------------------------
+# Wikipedia Tool
+# ------------------------------
+wiki = WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=500)
+
+@tool
+def wikipedia_search(query: str) -> str:
+    """Search medical terms, diseases, and symptoms on Wikipedia. Input should be a search query string."""
+    try:
+        return wiki.run(query)
+    except Exception as e:
+        return f"Wikipedia search failed: {str(e)}"
+
+# ------------------------------
+# Groq LLM with Tools
+# ------------------------------
+llm = ChatGroq(
+    groq_api_key=GROQ_API_KEY,
+    model_name="llama-3.3-70b-versatile",
+    temperature=0.3
+)
+
+# Bind tools to the LLM
+tools = [wikipedia_search]
+llm_with_tools = llm.bind_tools(tools)
+
+# ------------------------------
+# Agent Logic
+# ------------------------------
+def run_agent(user_message: str, report_data: str, max_iterations: int = 5):
+    """Simple agent loop that uses tools when needed"""
+    
+    system_message = f"""You are MedhyaMed Clinical Assistant AI, a helpful medical information assistant. Patient Report Data:
+{report_data}
+
+You have access to a wikipedia_search tool to look up medical information when needed.
+Provide clear, clinical explanations. Be professional and informative."""
+
+    messages = [
+        SystemMessage(content=system_message),
+        HumanMessage(content=user_message)
+    ]
+    
+    for iteration in range(max_iterations):
+        try:
+            # Get response from LLM
+            response = llm_with_tools.invoke(messages)
+            
+            # Check if there are tool calls
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                print(f"Iteration {iteration + 1}: Tool calls detected")
+                
+                # Add the assistant's response to messages
+                messages.append(response)
+                
+                # Execute each tool call
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call['name']
+                    tool_args = tool_call['args']
+                    
+                    print(f"Calling tool: {tool_name} with args: {tool_args}")
+                    
+                    # Execute the tool
+                    if tool_name == "wikipedia_search":
+                        tool_result = wikipedia_search.invoke(tool_args)
+                    else:
+                        tool_result = f"Unknown tool: {tool_name}"
+                    
+                    # Add tool result to messages
+                    from langchain_core.messages import ToolMessage
+                    messages.append(
+                        ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_call['id']
+                        )
+                    )
+                
+                # Continue the loop to get final answer
+                continue
+            else:
+                # No more tool calls, return the final answer
+                return response.content
+                
+        except Exception as e:
+            print(f"Error in iteration {iteration + 1}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return f"Error processing request: {str(e)}"
+    
+    return "Maximum iterations reached. Please try rephrasing your question."
+
+
+
+@app.route("/api/groq-chat", methods=["POST"])
+def agent_chat():
+    """Main chat endpoint for the medical assistant"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        message = data.get("message", "").strip()
+        report_json = data.get("reportJson", {})
+        
+        if not message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Format report data nicely
+        report_data = json.dumps(report_json, indent=2) if report_json else "No patient report provided"
+        
+        # Run agent
+        response_text = run_agent(message, report_data)
+        
+        return jsonify({
+            "reply": response_text,
+            "status": "success"
+        })
+        
+    except Exception as e:
+        print(f"Agent Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            "error": "Failed to process request",
+            "details": str(e)
+        }), 500
+
+
+
+
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors"""
+    return jsonify({
+        "error": "Endpoint not found",
+        "available_endpoints": ["/", "/health", "/analyse", "/analyse-stream"]
+    }), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors"""
+    return jsonify({
+        "error": "Internal server error",
+        "message": str(error)
+    }), 500
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("🏥 Medical Image Analysis API Server")
+    print("=" * 60)
+    print(f"✓ Server starting on http://0.0.0.0:4000")
+    print(f"✓ Script path: {SCRIPT_PATH}")
+    print(f"✓ Image path: {IMAGE_PATH}")
+    print(f"✓ Data JSON: {DATA_JSON}")
+    print("=" * 60)
+    print("📡 Available endpoints:")
+    print("   GET  /          - API information")
+    print("   GET  /health    - Health check")
+    print("   POST /analyse   - Standard analysis")
+    print("   POST /analyse-stream - Streaming analysis")
+    print("=" * 60)
+    
+    app.run(host="0.0.0.0", port=4000, threaded=True, debug=True)

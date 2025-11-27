@@ -1,0 +1,33 @@
+import json
+
+def convert_txt_to_json(input_file='/output_gemini.txt', output_file='data.json'):
+    """
+    Convert a text file to JSON format with the content stored under 'txt' key.
+    
+    Args:
+        input_file (str): Path to the input text file
+        output_file (str): Path to the output JSON file
+    """
+    try:
+        # Read the content from the text file
+        with open(input_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Create the JSON structure
+        data = {"txt": content}
+        
+        # Write to JSON file
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        
+        print(f"Successfully converted {input_file} to {output_file}")
+        return data
+        
+    except FileNotFoundError:
+        print(f"Error: {input_file} not found")
+    except Exception as e:
+        print(f"Error: {e}")
+
+# Example usage
+if __name__ == "__main__":
+    convert_txt_to_json('output_gemini.txt', 'data.json')

@@ -1,0 +1,11 @@
+envs_dirs:
+  - /home/chipmonkx86/miniconda3/envs
+  - /home/chipmonkx86/.conda/envs
+pkgs_dirs:
+  - /home/chipmonkx86/miniconda3/pkgs
+  - /home/chipmonkx86/.conda/pkgs
+auto_activate_base: false
+channel_priority: strict
+channels:
+  - conda-forge
+  - defaults
