@@ -1,9 +1,3 @@
-#!/bin/bash
-set -e
-
-
-bash out.sh
-
-sudo bash gemini.sh rad_report.txt
-sudo bash dg_generate.sh output_gemini.txt
-sudo python3 convert_json.py 
+version https://git-lfs.github.com/spec/v1
+oid sha256:e994203df5ee0c1f1abd41970ccc9e6ad3ed0522b28b76c27263ad4f759cc0a1
+size 142
